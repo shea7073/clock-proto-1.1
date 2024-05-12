@@ -265,6 +265,9 @@ static esp_err_t on_delete_alarm(httpd_req_t *req) {
                     alarm.hours = hours->valueint;
                     alarm.isActive = true;
                     delete_alarm(clock_manager.alarm_container, alarm);
+                    const char* resp = "Deleted Alarm!";
+                    httpd_resp_send(req, resp, strlen(resp));
+                    cJSON_Delete(root);
                     return ESP_OK;
             }
             }}
@@ -274,12 +277,8 @@ static esp_err_t on_delete_alarm(httpd_req_t *req) {
             ESP_LOGI(TAG, "num alarms: %d", clock_manager.alarm_container->curr_num_alarms);
         // END TESTING --------
 
-        
-
         cJSON_Delete(root);
         remaining -= ret;
-
-
     
 }
     return ESP_ERR_INVALID_ARG;

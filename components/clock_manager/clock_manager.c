@@ -41,7 +41,7 @@ esp_err_t add_alarm(alarm_container_t *alarm_container, alarm_t alarm) {
 }
 
 esp_err_t delete_alarm(alarm_container_t *alarm_container, alarm_t alarm) {
-    for (int i = 0; i < sizeof(alarm_t) * alarm_container->curr_num_alarms; i += sizeof(alarm_t)) {
+    for (int i = 0; i < alarm_container->curr_num_alarms; i ++) {
         if (alarm_container->alarm_list[i].hours == alarm.hours && alarm_container->alarm_list[i].minutes == alarm.minutes) {
             for (int j = i; j < sizeof(alarm_t) * alarm_container->curr_num_alarms - 1; j += sizeof(alarm_t)) {
                 alarm_container->alarm_list[i] = alarm_container->alarm_list[i+1];
