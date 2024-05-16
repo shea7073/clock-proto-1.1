@@ -112,3 +112,43 @@ int get_hours(void) {
     return  timeinfo.tm_hour;
     
 }
+
+esp_err_t alarm_enqueue(alarm_t * alarm, alarm_queue_t * queue) {
+
+    alarm_node_t alarm_node;
+    alarm_node.alarm = alarm;
+    alarm_node.next = NULL;
+
+    if (queue->size == 0) {
+       queue->front = alarm;
+       queue->rear = alarm;
+
+    }
+    else {
+        queue->rear->next = &alarm_node;
+        queue->rear = &alarm_node;
+    }
+
+     queue->size += 1;
+
+    return ESP_OK;
+}
+
+alarm_t * alarm_dequeue(alarm_queue_t * queue) {
+
+    if (queue->size == 0 || queue->front == NULL) {
+        return NULL;
+    }
+    else {
+        alarm_t * temp = queue->front->alarm;
+        queue->front = queue->front->next;
+        free(queue->front);
+        queue->size -= 1;
+        return temp;
+    }
+    
+    
+    
+
+    return ESP_OK;
+}

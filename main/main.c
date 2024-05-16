@@ -17,6 +17,8 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 
+#include <math.h>
+
 
 #define TAG "Clock-Main"
 
@@ -49,6 +51,9 @@ int digits_rev[10][8] =  {
 
 alarm_container_t alarm_container;
 clock_manager_t clock_manager;
+
+alarm_queue_t alarm_queue;
+
 
 void init_display_gpio(void) {
 
@@ -370,6 +375,92 @@ void mount_sdcard(void) {
 }
 
 
+void displayTime(void * params) {
+
+     while (true) {
+        time_t now;
+        struct tm timeinfo;
+        time(&now);
+        localtime_r(&now, &timeinfo);
+
+        int hours = timeinfo.tm_hour;
+        int minutes = timeinfo.tm_min;
+        int seconds = timeinfo.tm_sec;
+
+        int curr_digits[4];
+        if (hours < 10) {
+            curr_digits[0] = 0;
+            curr_digits[1] = hours;
+        }
+
+        else {
+           curr_digits[0] = (int)floor(hours / 10);
+            curr_digits[1] = hours % 10;
+        }
+
+        if (minutes < 10) {
+            curr_digits[2] = 0;
+            curr_digits[3] = minutes;
+        }
+
+        else {
+            curr_digits[2] = (int)floor(minutes / 10);
+            curr_digits[3] = minutes % 10;
+        }
+
+         for (int i = 3; i >= 0; i--) {
+            for (int j = 0; j < 8; j++) {
+                gpio_set_level(LATCH, 0);
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+                ESP_ERROR_CHECK(gpio_set_level(DATA, digits_rev[curr_digits[i]][j]));
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+                gpio_set_level(CLOCK, 1);
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+                gpio_set_level(CLOCK, 0);
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+                // ESP_LOGI(TAG, "%d", digits_rev[i][j]);
+
+            }
+            gpio_set_level(LATCH, 1);
+            vTaskDelay(10 / portTICK_PERIOD_MS);
+            
+        }
+        
+
+        // Log the current time
+        ESP_LOGI("Sending Time", "Hours: %d, Minutes: %d, Seconds: %d", hours, minutes, seconds);
+        //vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+
+}
+
+void alarmMonitor(void * params) {
+
+    while (true) {
+
+        int n = clock_manager.alarm_container->curr_num_alarms;
+        for (int i = 0; i < n; i++) {
+            if (clock_manager.alarm_container->alarm_list[i].hours == get_hours() &&
+            clock_manager.alarm_container->alarm_list[i].minutes == get_minutes &&
+            clock_manager.alarm_container->alarm_list[i].isActive) {
+                alarm_enqueue(&clock_manager.alarm_container->alarm_list[i], &alarm_queue);
+
+            }
+        }
+
+    }
+
+}
+
+void alarmSpawner(void * params) {
+
+    while (true) {
+
+    }
+
+}
+
+
 void app_main(void)
 {
     // mount the sdcard
@@ -381,7 +472,7 @@ void app_main(void)
     //initialize wifi
     wifi_connect_init();
 
-    ESP_ERROR_CHECK(wifi_connect_sta("143", "Sweetpea", 100000));
+    ESP_ERROR_CHECK(wifi_connect_sta("RFG-WLAN", "!R@dius!", 100000));
 
     // start mdns for local DNS name 
     start_mdns();
@@ -401,21 +492,10 @@ void app_main(void)
     // initialize gpios for 7 segment display control
     init_display_gpio();
 
+    // task for sending time to displays
+    xTaskCreatePinnedToCore(&displayTime, "display-time", 2048, NULL, 5, NULL, 1);
 
-// ------------------------------
-
-
-
-    // while (true) {
-    //     time_t now;
-    //     struct tm timeinfo;
-    //     time(&now);
-    //     localtime_r(&now, &timeinfo);
-
-    //     // Log the current time
-    //     ESP_LOGI("SNTP", "Current time: %s", asctime(&timeinfo));
-    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    // }
-
+     // set initial alarm queue size
+    alarm_queue.size = 0;
 
 }

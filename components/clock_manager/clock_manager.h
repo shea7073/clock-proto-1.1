@@ -28,6 +28,24 @@ typedef struct clock_manager
     
 } clock_manager_t;
 
+typedef struct alarm_node 
+{
+    alarm_t * alarm;
+
+    alarm_node_t * next;
+
+} alarm_node_t;
+
+typedef struct alarm_queue
+{
+    alarm_node_t * front;
+    alarm_node_t * rear;
+
+    int size;
+
+} alarm_queue_t;
+
+
 esp_err_t init_alarm_container(alarm_container_t * alarm_container);
 esp_err_t add_alarm(alarm_container_t *alarm_container, alarm_t alarm);
 esp_err_t delete_alarm(alarm_container_t *alarm_container, alarm_t alarm);
@@ -37,5 +55,7 @@ void obtain_time(void);
 void set_time(void);
 int get_minutes(void);
 int get_hours(void);
+esp_err_t alarm_enqueue(alarm_t * alarm, alarm_queue_t * queue);
+alarm_t * alarm_dequeue(alarm_queue_t * queue);
 
 #endif

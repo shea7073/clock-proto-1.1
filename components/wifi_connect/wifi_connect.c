@@ -63,6 +63,11 @@ void wifi_connect_init(void) {
 }
 
 esp_err_t wifi_connect_sta(char* ssid, char* pass, int timeout) {
+    
+    //--------TESTING------------
+    int core_id = xPortGetCoreID();
+    ESP_LOGI("Task", "Running on core %d", core_id);
+    //-------END TESTING-------------
 
     wifi_events = xEventGroupCreate();
 
