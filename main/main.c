@@ -16,8 +16,11 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
 
 #include <math.h>
+#include "main.h"
 
 
 #define TAG "Clock-Main"
@@ -34,6 +37,8 @@
 #define LATCH GPIO_NUM_22
 #define CLOCK GPIO_NUM_23
 #define DATA  GPIO_NUM_21
+
+#define SWITCH GPIO_NUM_13
 
 // these are set backwards so they start at dot pixel and move from G-A
 int digits_rev[10][8] =  {
@@ -52,7 +57,14 @@ int digits_rev[10][8] =  {
 alarm_container_t alarm_container;
 clock_manager_t clock_manager;
 
+SemaphoreHandle_t queue_mutex;
+SemaphoreHandle_t alarm_mutex;
+
 alarm_queue_t alarm_queue;
+
+QueueHandle_t interruptQueue;
+
+TaskHandle_t alarm_handle;
 
 
 void init_display_gpio(void) {
@@ -132,7 +144,7 @@ static esp_err_t on_default_url(httpd_req_t *req) {
 
 static esp_err_t on_set_alarm(httpd_req_t *req) {
 
-    alarm_t alarm;
+    alarm_t alarm;   
     
     char data[200];
 
@@ -434,6 +446,17 @@ void displayTime(void * params) {
 
 }
 
+
+void alarm_triggered_task(void * params) {
+    // Trigger song or alarm noise
+    while (true)
+    {
+        ESP_LOGI("ALARM-TRIGGERED", "Wake up!");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    
+}
+
 void alarmMonitor(void * params) {
 
     while (true) {
@@ -441,13 +464,19 @@ void alarmMonitor(void * params) {
         int n = clock_manager.alarm_container->curr_num_alarms;
         for (int i = 0; i < n; i++) {
             if (clock_manager.alarm_container->alarm_list[i].hours == get_hours() &&
-            clock_manager.alarm_container->alarm_list[i].minutes == get_minutes &&
+            clock_manager.alarm_container->alarm_list[i].minutes == get_minutes() &&
             clock_manager.alarm_container->alarm_list[i].isActive) {
-                alarm_enqueue(&clock_manager.alarm_container->alarm_list[i], &alarm_queue);
-
+                if(xSemaphoreTake(queue_mutex, 1000 / portTICK_PERIOD_MS)) {
+                    alarm_enqueue(&clock_manager.alarm_container->alarm_list[i], &alarm_queue);
+                    xSemaphoreGive(queue_mutex);
+                }
+                else {
+                    ESP_LOGI("Alarm Monitor", "Could not access alarm queue");
+                }
+                
             }
         }
-
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
 }
@@ -455,10 +484,78 @@ void alarmMonitor(void * params) {
 void alarmSpawner(void * params) {
 
     while (true) {
-
+        if (alarm_queue.size > 0) {
+            if (xSemaphoreTake(queue_mutex, 1000 / portTICK_PERIOD_MS)) {
+                    alarm_t * alarm = alarm_dequeue(&alarm_queue);
+                    xSemaphoreGive(queue_mutex);
+                    if (xSemaphoreTake(alarm_mutex, portMAX_DELAY)) {
+                        xTaskCreatePinnedToCore(&alarm_triggered_task, "trigger-alarm", 4048, alarm, 5, &alarm_handle, 1);
+                    }
+                    
+                }
+                else {
+                    ESP_LOGI("Alarm Spawner", "Could not access alarm queue");
+                }
+            
+            
+        }
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 
 }
+
+static void IRAM_ATTR gpio_isr_handler(void *args) {
+    char mesg[] = "buttonPushedTask";
+    xQueueSendFromISR(interruptQueue, &mesg, NULL);
+}
+
+void buttonPushedTask(void *params) {
+
+    char mesg[17];
+
+    while (true)
+    {
+        if (xQueueReceive(interruptQueue, &mesg, portMAX_DELAY))
+        {
+            // disable the interrupt
+            gpio_isr_handler_remove(SWITCH);
+
+            // wait some time while we check for the button to be released
+            do
+            {
+                vTaskDelay(20 / portTICK_PERIOD_MS);
+            } while (gpio_get_level(SWITCH) == 1);
+
+             if (alarm_handle != NULL) {
+                ESP_LOGI("ISR", " : %s", mesg);
+                vTaskDelete(alarm_handle);
+                // alarm_handle = NULL;
+                // xSemaphoreGive(alarm_mutex);
+                }
+
+            // re-enable the interrupt
+            gpio_isr_handler_add(SWITCH, gpio_isr_handler, (void*)NULL);
+        }
+    }
+}
+
+
+void alarm_isr_setup() {
+    // set gpio for button input
+    gpio_set_direction(SWITCH, GPIO_MODE_INPUT);
+    gpio_pulldown_en(SWITCH);
+    gpio_pullup_dis(SWITCH);
+    gpio_set_intr_type(SWITCH, GPIO_INTR_POSEDGE);
+    
+    interruptQueue = xQueueCreate(10, sizeof(int));
+    xTaskCreate(&buttonPushedTask, "buttonPushedTask", 4048, NULL, 1, NULL);
+    ESP_LOGI("ISR", "Got here");
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(SWITCH, gpio_isr_handler, (void*)NULL);
+
+}
+
 
 
 void app_main(void)
@@ -472,7 +569,7 @@ void app_main(void)
     //initialize wifi
     wifi_connect_init();
 
-    ESP_ERROR_CHECK(wifi_connect_sta("RFG-WLAN", "!R@dius!", 100000));
+    ESP_ERROR_CHECK(wifi_connect_sta("143", "Sweetpea", 100000));
 
     // start mdns for local DNS name 
     start_mdns();
@@ -482,6 +579,9 @@ void app_main(void)
 
     // set current time
     set_time();
+
+    queue_mutex = xSemaphoreCreateMutex();
+    alarm_mutex = xSemaphoreCreateMutex();
     
     // initialize the alarm container
     init_alarm_container(&alarm_container);
@@ -492,10 +592,18 @@ void app_main(void)
     // initialize gpios for 7 segment display control
     init_display_gpio();
 
+
     // task for sending time to displays
-    xTaskCreatePinnedToCore(&displayTime, "display-time", 2048, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(&displayTime, "display-time", 4048, NULL, 5, NULL, 1);
 
      // set initial alarm queue size
     alarm_queue.size = 0;
+
+    xTaskCreatePinnedToCore(&alarmSpawner, "alarm-spawner", 4048, NULL, 5, NULL, 1);
+
+    xTaskCreatePinnedToCore(&alarmMonitor, "alarm-monitor", 4048, NULL, 5, NULL, 1);
+
+
+    alarm_isr_setup();
 
 }

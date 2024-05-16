@@ -140,15 +140,11 @@ alarm_t * alarm_dequeue(alarm_queue_t * queue) {
         return NULL;
     }
     else {
-        alarm_t * temp = queue->front->alarm;
+        alarm_t * poppedAlarm = queue->front->alarm;
         queue->front = queue->front->next;
-        free(queue->front);
         queue->size -= 1;
-        return temp;
+        return poppedAlarm;
     }
-    
-    
-    
 
     return ESP_OK;
 }

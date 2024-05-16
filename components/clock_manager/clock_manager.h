@@ -32,7 +32,7 @@ typedef struct alarm_node
 {
     alarm_t * alarm;
 
-    alarm_node_t * next;
+    struct alarm_node* next;
 
 } alarm_node_t;
 
