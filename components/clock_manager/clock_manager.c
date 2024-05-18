@@ -146,5 +146,5 @@ alarm_t * alarm_dequeue(alarm_queue_t * queue) {
         return poppedAlarm;
     }
 
-    return ESP_OK;
+    
 }

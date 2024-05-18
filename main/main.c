@@ -433,11 +433,11 @@ void displayTime(void * params) {
                 // ESP_LOGI(TAG, "%d", digits_rev[i][j]);
 
             }
-            gpio_set_level(LATCH, 1);
-            vTaskDelay(10 / portTICK_PERIOD_MS);
+            
             
         }
-        
+        gpio_set_level(LATCH, 1);
+        vTaskDelay(10 / portTICK_PERIOD_MS);
 
         // Log the current time
         ESP_LOGI("Sending Time", "Hours: %d, Minutes: %d, Seconds: %d", hours, minutes, seconds);
@@ -448,6 +448,7 @@ void displayTime(void * params) {
 
 
 void alarm_triggered_task(void * params) {
+
     // Trigger song or alarm noise
     while (true)
     {
@@ -460,14 +461,15 @@ void alarm_triggered_task(void * params) {
 void alarmMonitor(void * params) {
 
     while (true) {
-
+        ESP_LOGI("Monitor", "Queue size: %d", alarm_queue.size);
         int n = clock_manager.alarm_container->curr_num_alarms;
         for (int i = 0; i < n; i++) {
             if (clock_manager.alarm_container->alarm_list[i].hours == get_hours() &&
             clock_manager.alarm_container->alarm_list[i].minutes == get_minutes() &&
             clock_manager.alarm_container->alarm_list[i].isActive) {
-                if(xSemaphoreTake(queue_mutex, 1000 / portTICK_PERIOD_MS)) {
+                if(xSemaphoreTake(queue_mutex, portMAX_DELAY)) {
                     alarm_enqueue(&clock_manager.alarm_container->alarm_list[i], &alarm_queue);
+                    clock_manager.alarm_container->alarm_list[i].isActive = false;
                     xSemaphoreGive(queue_mutex);
                 }
                 else {
@@ -484,20 +486,16 @@ void alarmMonitor(void * params) {
 void alarmSpawner(void * params) {
 
     while (true) {
-        if (alarm_queue.size > 0) {
-            if (xSemaphoreTake(queue_mutex, 1000 / portTICK_PERIOD_MS)) {
+        if (alarm_queue.size > 0 && alarm_handle == NULL) {
+            //if (alarm_queue.size > 0) {
+            if (xSemaphoreTake(queue_mutex, portMAX_DELAY)) {
                     alarm_t * alarm = alarm_dequeue(&alarm_queue);
                     xSemaphoreGive(queue_mutex);
-                    if (xSemaphoreTake(alarm_mutex, portMAX_DELAY)) {
-                        xTaskCreatePinnedToCore(&alarm_triggered_task, "trigger-alarm", 4048, alarm, 5, &alarm_handle, 1);
-                    }
-                    
+                    xTaskCreatePinnedToCore(&alarm_triggered_task, "trigger-alarm", 4048, NULL, 1, &alarm_handle, 1);
                 }
                 else {
                     ESP_LOGI("Alarm Spawner", "Could not access alarm queue");
                 }
-            
-            
         }
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
@@ -515,7 +513,7 @@ void buttonPushedTask(void *params) {
 
     while (true)
     {
-        if (xQueueReceive(interruptQueue, &mesg, portMAX_DELAY))
+        if (xQueueReceive(interruptQueue, &mesg, portMAX_DELAY) == pdTRUE)
         {
             // disable the interrupt
             gpio_isr_handler_remove(SWITCH);
@@ -529,8 +527,8 @@ void buttonPushedTask(void *params) {
              if (alarm_handle != NULL) {
                 ESP_LOGI("ISR", " : %s", mesg);
                 vTaskDelete(alarm_handle);
-                // alarm_handle = NULL;
-                // xSemaphoreGive(alarm_mutex);
+                alarm_handle = NULL;
+                
                 }
 
             // re-enable the interrupt
@@ -594,14 +592,16 @@ void app_main(void)
 
 
     // task for sending time to displays
-    xTaskCreatePinnedToCore(&displayTime, "display-time", 4048, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(&displayTime, "display-time", 4048, NULL, 1, NULL, 1);
 
      // set initial alarm queue size
     alarm_queue.size = 0;
 
-    xTaskCreatePinnedToCore(&alarmSpawner, "alarm-spawner", 4048, NULL, 5, NULL, 1);
+    
+    xTaskCreatePinnedToCore(&alarmMonitor, "alarm-monitor", 4048, NULL, 1, NULL, 1);
 
-    xTaskCreatePinnedToCore(&alarmMonitor, "alarm-monitor", 4048, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(&alarmSpawner, "alarm-spawner", 4048, NULL, 1, NULL, 1);
+
 
 
     alarm_isr_setup();
