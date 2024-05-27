@@ -15,6 +15,7 @@
     "idf.toolsPath": "/home/seanshea/esp/esp-idf/tools",
     "idf.port": "/dev/ttyUSB0",
     "files.associations": {
-        "nvs_flash.h": "c"
+        "nvs_flash.h": "c",
+        "i2s_std.h": "c"
     }
 }
