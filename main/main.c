@@ -320,6 +320,71 @@ static esp_err_t on_delete_alarm(httpd_req_t *req) {
     return ESP_ERR_INVALID_ARG;
 };
 
+static esp_err_t on_toggle_alarm(httpd_req_t *req) {
+    
+    char data[200];
+
+    int ret, remaining = req->content_len;
+
+    while (remaining > 0) {
+        /* Read the data for the request */
+        if ((ret = httpd_req_recv(req, data, MIN(remaining, sizeof(data)))) <= 0) {
+            if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+                continue;
+            }
+            return ESP_FAIL;
+        }
+
+        /* Process the JSON data */
+        cJSON *root = cJSON_Parse(data);
+        if (root == NULL) {
+            ESP_LOGE(TAG, "JSON parse error");
+            return ESP_FAIL;
+        }
+
+        cJSON *hours = cJSON_GetObjectItem(root, "hours");
+        if (hours) {
+            ESP_LOGI(TAG, "Hours: %d", hours->valueint);
+        }
+
+        cJSON *minutes = cJSON_GetObjectItem(root, "minutes");
+        if (minutes) {
+            ESP_LOGI(TAG, "minutes: %d", minutes->valueint);
+        }
+
+
+        cJSON *isActive = cJSON_GetObjectItem(root, "isActive");
+        if (isActive != NULL) {
+            ESP_LOGI(TAG, "isActive: %d", isActive->valueint);
+        }
+
+
+        if (minutes && hours) {
+            if ((minutes->valueint != get_minutes()) || (hours->valueint != get_hours())){
+            
+                int n = clock_manager.alarm_container->curr_num_alarms;
+                for (int i = 0; i < n; i++) {
+                    if (minutes->valueint == clock_manager.alarm_container->alarm_list[i].minutes 
+                    && hours->valueint == clock_manager.alarm_container->alarm_list[i].hours) {
+                        clock_manager.alarm_container->alarm_list[i].isActive = (bool)isActive->valueint;
+                        const char* resp = "Toggled Alarm!";
+                        httpd_resp_send(req, resp, strlen(resp));
+                        cJSON_Delete(root);
+                        return ESP_OK;
+            }}
+        
+            }
+            }
+       
+            
+        cJSON_Delete(root);
+        remaining -= ret;
+    
+}
+    httpd_resp_send_404(req);
+    return ESP_ERR_INVALID_ARG;
+}
+
 
 
 
@@ -330,8 +395,17 @@ static void init_server() {
 
     config.uri_match_fn = httpd_uri_match_wildcard;
 
-
     ESP_ERROR_CHECK(httpd_start(&server, &config));
+
+    httpd_uri_t toggle_alarm_url = {
+        .uri = "/toggleAlarm",
+        .method = HTTP_POST,
+        .handler = on_toggle_alarm
+    };
+
+    httpd_register_uri_handler(server, &toggle_alarm_url);
+
+
 
     httpd_uri_t set_alarm_url = {
         .uri = "/setAlarm",
@@ -674,7 +748,7 @@ void app_main(void)
     // initialize the alarm container
     init_alarm_container(&alarm_container);
     
-    // add alarm container to the clock manager struct
+    // add alarm container to the clock mif(minutes != get_minutes() && hours != get_hours()) {ager struct
     clock_manager.alarm_container = &alarm_container;
 
     // initialize gpios for 7 segment display control
@@ -697,9 +771,5 @@ void app_main(void)
     alarm_isr_setup();
 
     init_i2s();
-
-   
-
-    //TEST CHANGE BUILD
 
 }

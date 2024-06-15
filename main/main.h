@@ -21,6 +21,22 @@ typedef struct {
 void play_wav(int16_t *, FILE*);
 int16_t * allocate_i2s_buffer();
 FILE* open_wav(char*);
+void init_display_gpio(void);
+void start_mdns();
+static esp_err_t on_default_url(httpd_req_t *req);
+static esp_err_t on_set_alarm(httpd_req_t *req);
+static esp_err_t on_get_alarms(httpd_req_t *req);
+static esp_err_t on_delete_alarm(httpd_req_t *req);
+static esp_err_t on_toggle_alarm(httpd_req_t *req);
+static void init_server();
+void mount_sdcard(void);
+void displayTime(void * params);
+void alarm_triggered_task(void * params);
+void alarmMonitor(void * params);
+void alarmSpawner(void * params);
 
+void buttonPushedTask(void *params);
+void alarm_isr_setup();
+void init_i2s();
 
 #endif
